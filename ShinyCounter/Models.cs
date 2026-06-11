@@ -33,6 +33,7 @@ public sealed class AppSettings
     public bool AlwaysOnTop { get; set; }
     public bool SoundOn { get; set; } = true;
     public double UiScale { get; set; } = 1.0;
+    public string Theme { get; set; } = "Dark";
     public List<Hunt> Hunts { get; set; } = new();
     public List<HistoryEntry> History { get; set; } = new();
 }

@@ -14,7 +14,13 @@ A native Windows counter for Pokémon shiny hunting. Bind a keyboard key or a co
 - **Pace & ETA** — tracks active hunting time (AFK gaps don't count), your resets per hour, and the estimated time until you pass 50% odds.
 - **Mini overlay** — shrink to a tiny always-on-top counter that sits in a screen corner over your game.
 - **Hunt history** — hit *✨ found!* when you get the shiny and the hunt is archived with its count, odds, time, and date.
+- **Themes** — Dark, Light, and Pokémon built in, switchable in settings. Community themes are simple JSON files: drop one into `%APPDATA%\ShinyCounter\Themes` and it appears in the picker.
+- **Settings window** — sound, window size, theme, triggers, odds, and step all in one tidy ⚙ panel.
 - **Quality of life** — tick sound on each count, always-on-top pin, window size presets (70–115%), increment steps for multi-encounter methods, autosave to `%APPDATA%\ShinyCounter`.
+
+<p align="center">
+  <img src="docs/themes.png" width="640" alt="Pokémon and Light themes">
+</p>
 
 ## Download
 
@@ -27,6 +33,24 @@ Grab `ShinyCounter.exe` from the [latest release](../../releases/latest) and run
 1. Click **rebind** next to *count:* and press the key or controller button you use for soft resets.
 2. Play your game. Every press counts, even with the game focused.
 3. Optional: bind an undo trigger, pick your odds, pin the window, or switch to **mini** overlay mode.
+
+## Making a theme
+
+Themes are JSON files with 12 colors — hover/dim/border shades are derived automatically. Copy a stock file from `%APPDATA%\ShinyCounter\Themes` (created on first run), rename it, change the colors, then pick it in ⚙ settings:
+
+```json
+{
+  "Name": "MyTheme",
+  "Colors": {
+    "bg": "#0E0E10", "surface": "#18181B", "surface2": "#1F1F23",
+    "border": "#14FFFFFF", "borderHover": "#26FFFFFF",
+    "text": "#F4F4F5", "muted": "#71717A", "hint": "#3F3F46",
+    "accent": "#A78BFA", "danger": "#F87171", "success": "#34D399", "warning": "#FBBF24"
+  }
+}
+```
+
+Made a good one? Open a PR or issue and it can be featured here.
 
 ## Building from source
 

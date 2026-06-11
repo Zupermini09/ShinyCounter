@@ -7,20 +7,20 @@
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
-        Background="#0E0E10"
+        Background="{DynamicResource BgBrush}"
         FontFamily="Segoe UI"
         KeyDown="Window_KeyDown"
         MouseLeftButtonDown="Window_Drag">
 
-  <Border Background="{StaticResource SurfaceBrush}"
-          BorderBrush="{StaticResource BorderHoverBrush}"
+  <Border Background="{DynamicResource SurfaceBrush}"
+          BorderBrush="{DynamicResource BorderHoverBrush}"
           BorderThickness="1"
           CornerRadius="14"
           Padding="20"
           Width="320">
     <StackPanel>
       <TextBlock x:Name="TitleText" Text="hunt name"
-                 FontSize="12" Foreground="{StaticResource MutedBrush}"
+                 FontSize="12" Foreground="{DynamicResource MutedBrush}"
                  Margin="0,0,0,10"/>
       <TextBox x:Name="NameBox" Style="{StaticResource NumBox}"
                Tag="e.g. Rayquaza" MaxLength="40" Margin="0,0,0,12"/>
@@ -30,10 +30,10 @@
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <Button Style="{StaticResource Btn}" Content="ok"
-                Background="{StaticResource AccentDimBrush}"
-                BorderBrush="{StaticResource AccentBorderBrush}"
-                Foreground="{StaticResource AccentBrush}"
-                Tag="{StaticResource AccentHoverBrush}"
+                Background="{DynamicResource AccentDimBrush}"
+                BorderBrush="{DynamicResource AccentBorderBrush}"
+                Foreground="{DynamicResource AccentBrush}"
+                Tag="{DynamicResource AccentHoverBrush}"
                 Margin="0,0,8,0" Click="Ok_Click"/>
         <Button Grid.Column="1" Style="{StaticResource Btn}" Content="cancel"
                 Width="80" Click="Cancel_Click"/>

@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -22,9 +21,7 @@ public partial class HistoryWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        var handle = new WindowInteropHelper(this).Handle;
-        int dark = 1;
-        DwmSetWindowAttribute(handle, 20, ref dark, sizeof(int));
+        ThemeManager.ApplyTitleBar(this);
     }
 
     private void Refresh()
@@ -101,6 +98,4 @@ public partial class HistoryWindow : Window
         };
     }
 
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 }

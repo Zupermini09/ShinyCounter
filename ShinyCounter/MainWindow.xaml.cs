@@ -1,9 +1,8 @@
-using System.Globalization;
 using System.IO;
 using System.Media;
-using System.Threading;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -21,8 +20,15 @@ public partial class MainWindow : Window
     private AppSettings _settings = new();
     private Hunt H => _settings.Hunts[_settings.ActiveHunt];
 
-    private enum BindTarget { None, Count, Undo }
+    internal AppSettings Model => _settings;
+    internal Hunt CurrentHunt => H;
+
+    /// Raised after any saved change so the settings window can stay in sync.
+    internal event Action? AppStateChanged;
+
+    internal enum BindTarget { None, Count, Undo }
     private BindTarget _listening = BindTarget.None;
+    internal BindTarget Listening => _listening;
 
     private bool _keyHeld, _undoKeyHeld, _padHeld, _undoPadHeld;
     private bool _loading, _suppressHuntSelect, _mini;
@@ -32,11 +38,11 @@ public partial class MainWindow : Window
     private bool _padConnected;
     private string _padName = "";
 
+    private SettingsWindow? _settingsWindow;
+
     private readonly DispatcherTimer _padTimer;
     private readonly SolidColorBrush _counterBrush;
     private SoundPlayer? _tick, _tickLow, _chime;
-    private static readonly Color AccentColor = Color.FromRgb(0xA7, 0x8B, 0xFA);
-    private static readonly Color TextColor = Color.FromRgb(0xF4, 0xF4, 0xF5);
 
     private static readonly string SettingsDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ShinyCounter");
@@ -46,7 +52,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        _counterBrush = new SolidColorBrush(TextColor);
+        _counterBrush = new SolidColorBrush(ThemeManager.Text);
         CounterText.Foreground = _counterBrush;
         MiniCount.Foreground = _counterBrush;
 
@@ -65,9 +71,7 @@ public partial class MainWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        var handle = new WindowInteropHelper(this).Handle;
-        int dark = 1;
-        DwmSetWindowAttribute(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
+        ThemeManager.ApplyTitleBar(this);
         InstallKeyboardHook();
     }
 
@@ -84,6 +88,20 @@ public partial class MainWindow : Window
         base.OnClosed(e);
     }
 
+    // ── Settings window ──────────────────────────────────────────────────────
+
+    private void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_settingsWindow is { IsLoaded: true })
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+        _settingsWindow = new SettingsWindow(this) { Owner = this };
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.Show();
+    }
+
     // ── Binding (trigger buttons) ────────────────────────────────────────────
 
     private Button ListenButton => _listening == BindTarget.Undo ? UndoBindBtn : BindBtn;
@@ -92,13 +110,14 @@ public partial class MainWindow : Window
 
     private void UndoBindBtn_Click(object sender, RoutedEventArgs e) => StartListening(BindTarget.Undo);
 
-    private void StartListening(BindTarget target)
+    internal void StartListening(BindTarget target)
     {
         if (_listening != BindTarget.None) CancelBinding();
         _listening = target;
         ListenButton.Content = "press key or button…";
         BoundDisplay.Text = "waiting… (Esc cancels)";
         StartBlink(ListenButton);
+        AppStateChanged?.Invoke();
     }
 
     private void CancelBinding()
@@ -108,6 +127,7 @@ public partial class MainWindow : Window
         ListenButton.Content = "rebind";
         _listening = BindTarget.None;
         UpdateBoundDisplay();
+        AppStateChanged?.Invoke();
     }
 
     private void FinishKeyBinding(int vk)
@@ -156,7 +176,7 @@ public partial class MainWindow : Window
             $"  ·  undo: {BindDesc(H.UndoBindType, H.UndoBindKey, H.UndoBindButton)}";
     }
 
-    private static string BindDesc(string type, int vk, int button) => type switch
+    internal static string BindDesc(string type, int vk, int button) => type switch
     {
         "key" => KeyLabel(vk),
         "pad" => $"Button {button}",
@@ -227,7 +247,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        bool typing = IsActive && Keyboard.FocusedElement is TextBox;
+        bool typing = Application.Current.Windows.OfType<Window>()
+            .Any(w => w.IsActive) && Keyboard.FocusedElement is TextBox;
 
         if (H.BindType == "key" && vk == H.BindKey)
         {
@@ -380,23 +401,7 @@ public partial class MainWindow : Window
         SetCount(0);
     }
 
-    private void SetManual_Click(object sender, RoutedEventArgs e) => ApplyManualCount();
-
-    private void ManualInput_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) ApplyManualCount();
-    }
-
-    private void ApplyManualCount()
-    {
-        if (long.TryParse(ManualInput.Text.Trim().Replace(",", "").Replace(" ", ""), out long v) && v >= 0)
-        {
-            SetCount(v, flash: true);
-            ManualInput.Text = "";
-        }
-    }
-
-    private void SetCount(long value, bool flash = false)
+    internal void SetCount(long value, bool flash = false)
     {
         H.Count = value;
         string text = value.ToString("N0");
@@ -409,7 +414,7 @@ public partial class MainWindow : Window
 
     private void FlashCounter()
     {
-        var anim = new ColorAnimation(AccentColor, TextColor, TimeSpan.FromMilliseconds(300));
+        var anim = new ColorAnimation(ThemeManager.Accent, ThemeManager.Text, TimeSpan.FromMilliseconds(300));
         _counterBrush.BeginAnimation(SolidColorBrush.ColorProperty, anim);
     }
 
@@ -518,111 +523,60 @@ public partial class MainWindow : Window
     /// Push the active hunt's state into every control.
     private void ApplyHuntToUi()
     {
-        _loading = true;
-
         CounterText.Text = H.Count.ToString("N0");
         MiniCount.Text = H.Count.ToString("N0");
         MiniName.Text = H.Name;
         IncrementBtn.Content = $"+ {H.Step} manual";
         UpdateBoundDisplay();
 
-        StepInput.Text = "";
-        StepInput.Tag = "custom";
-        var stepPill = H.Step switch { 1 => Step1, 2 => Step2, 3 => Step3, 4 => Step4, _ => null };
-        foreach (var rb in new[] { Step1, Step2, Step3, Step4 }) rb.IsChecked = rb == stepPill;
-        if (stepPill is null) StepInput.Tag = H.Step.ToString();
-
-        OddsInput.Text = "";
-        OddsInput.Tag = "custom";
-        RadioButton? oddsPill = H.Odds switch
-        {
-            8192 => Odds8192,
-            4096 => Odds4096,
-            1365.33 => Odds1365,
-            512 => Odds512,
-            _ => null
-        };
-        foreach (var rb in new[] { Odds8192, Odds4096, Odds1365, Odds512 }) rb.IsChecked = rb == oddsPill;
-        if (oddsPill is null) OddsInput.Tag = H.Odds.ToString("0.##");
-
         _keyHeld = _undoKeyHeld = _padHeld = _undoPadHeld = false;
         _lastIncrementAt = null;
 
-        _loading = false;
         UpdateStats();
     }
 
-    // ── Step ─────────────────────────────────────────────────────────────────
+    // ── Hunt config (called from the settings window) ────────────────────────
 
-    private void StepPill_Checked(object sender, RoutedEventArgs e)
-    {
-        if (_loading) return;
-        if (sender is RadioButton rb && int.TryParse((string)rb.Tag, out int v))
-        {
-            SetStep(v);
-            StepInput.Text = "";
-        }
-    }
-
-    private void SetStepCustom_Click(object sender, RoutedEventArgs e) => ApplyCustomStep();
-
-    private void StepInput_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) ApplyCustomStep();
-    }
-
-    private void ApplyCustomStep()
-    {
-        if (int.TryParse(StepInput.Text.Trim(), out int v) && v >= 1 && v <= 9999)
-        {
-            foreach (var rb in new[] { Step1, Step2, Step3, Step4 }) rb.IsChecked = false;
-            SetStep(v);
-        }
-    }
-
-    private void SetStep(int v)
+    internal void ApplyStep(int v)
     {
         H.Step = v;
         IncrementBtn.Content = $"+ {v} manual";
         SaveSettings();
     }
 
-    // ── Odds ─────────────────────────────────────────────────────────────────
-
-    private void OddsPill_Checked(object sender, RoutedEventArgs e)
-    {
-        if (_loading) return;
-        if (sender is RadioButton rb &&
-            double.TryParse((string)rb.Tag, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
-        {
-            SetOdds(v);
-            OddsInput.Text = "";
-        }
-    }
-
-    private void SetOddsCustom_Click(object sender, RoutedEventArgs e) => ApplyCustomOdds();
-
-    private void OddsInput_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) ApplyCustomOdds();
-    }
-
-    private void ApplyCustomOdds()
-    {
-        string raw = OddsInput.Text.Trim();
-        if ((double.TryParse(raw, NumberStyles.Float, CultureInfo.CurrentCulture, out double v) ||
-             double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out v)) && v >= 2)
-        {
-            foreach (var rb in new[] { Odds8192, Odds4096, Odds1365, Odds512 }) rb.IsChecked = false;
-            SetOdds(v);
-        }
-    }
-
-    private void SetOdds(double v)
+    internal void ApplyOdds(double v)
     {
         H.Odds = v;
         UpdateStats();
         SaveSettings();
+    }
+
+    internal void ApplySound(bool on) => SoundToggleBtn.IsChecked = on;
+
+    internal void ApplyScaleSetting(double v)
+    {
+        _settings.UiScale = v;
+        ApplyScale(v);
+        SaveSettings();
+    }
+
+    internal void ApplyTheme(string name)
+    {
+        _settings.Theme = name;
+        ThemeManager.Apply(name);
+        OnThemeApplied();
+        SaveSettings();
+    }
+
+    private void OnThemeApplied()
+    {
+        _counterBrush.BeginAnimation(SolidColorBrush.ColorProperty, null);
+        _counterBrush.Color = ThemeManager.Text;
+        // Re-resolve the status pill brushes for the new palette
+        bool wasConnected = _padConnected;
+        string name = _padName;
+        _padConnected = !wasConnected;
+        UpdateStatusPill(wasConnected, name);
     }
 
     // ── Stats ────────────────────────────────────────────────────────────────
@@ -702,18 +656,6 @@ public partial class MainWindow : Window
     }
 
     // ── Window scale ─────────────────────────────────────────────────────────
-
-    private void ScalePill_Checked(object sender, RoutedEventArgs e)
-    {
-        if (_loading) return;
-        if (sender is RadioButton rb &&
-            double.TryParse((string)rb.Tag, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
-        {
-            _settings.UiScale = v;
-            ApplyScale(v);
-            SaveSettings();
-        }
-    }
 
     private void ApplyScale(double v)
     {
@@ -831,7 +773,7 @@ public partial class MainWindow : Window
 
     // ── Persistence ──────────────────────────────────────────────────────────
 
-    private void SaveSettings()
+    internal void SaveSettings()
     {
         if (_loading) return;
         try
@@ -844,6 +786,7 @@ public partial class MainWindow : Window
             File.Move(tmp, SettingsPath, overwrite: true);
         }
         catch { /* never block counting on a failed save */ }
+        AppStateChanged?.Invoke();
     }
 
     private void LoadSettings()
@@ -879,19 +822,13 @@ public partial class MainWindow : Window
         _settings.ActiveHunt = Math.Clamp(_settings.ActiveHunt, 0, _settings.Hunts.Count - 1);
         if (_settings.UiScale < 0.5 || _settings.UiScale > 2) _settings.UiScale = 1.0;
 
+        ThemeManager.EnsureStockThemes();
+        ThemeManager.Apply(_settings.Theme);
+        OnThemeApplied();
+
         SoundToggleBtn.IsChecked = _settings.SoundOn;
         PinToggleBtn.IsChecked = _settings.AlwaysOnTop;
         Topmost = _settings.AlwaysOnTop;
-
-        RadioButton? scalePill = _settings.UiScale switch
-        {
-            0.7 => Scale70,
-            0.85 => Scale85,
-            1.0 => Scale100,
-            1.15 => Scale115,
-            _ => null
-        };
-        if (scalePill is not null) scalePill.IsChecked = true;
         ApplyScale(_settings.UiScale);
 
         _loading = false;
@@ -927,7 +864,6 @@ public partial class MainWindow : Window
 
     // ── Win32 ────────────────────────────────────────────────────────────────
 
-    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_ROUND = 2;
 

@@ -6,11 +6,11 @@
         Width="480" Height="520"
         ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner"
-        Background="#0E0E10"
+        Background="{DynamicResource BgBrush}"
         FontFamily="Segoe UI">
 
-  <Border Background="{StaticResource SurfaceBrush}"
-          BorderBrush="{StaticResource BorderBrush2}"
+  <Border Background="{DynamicResource SurfaceBrush}"
+          BorderBrush="{DynamicResource BorderBrush2}"
           BorderThickness="1"
           CornerRadius="16"
           Margin="14"
@@ -23,12 +23,12 @@
 
       <TextBlock Text="COMPLETED HUNTS"
                  FontSize="13" FontWeight="Medium"
-                 Foreground="{StaticResource MutedBrush}"
+                 Foreground="{DynamicResource MutedBrush}"
                  Margin="0,0,0,14"/>
 
       <TextBlock x:Name="EmptyText" Grid.Row="1"
                  Text="No shinies logged yet — hit “✨ found!” when you get one."
-                 FontSize="12" Foreground="{StaticResource MutedBrush}"
+                 FontSize="12" Foreground="{DynamicResource MutedBrush}"
                  HorizontalAlignment="Center" VerticalAlignment="Center"
                  Visibility="Collapsed"/>
 

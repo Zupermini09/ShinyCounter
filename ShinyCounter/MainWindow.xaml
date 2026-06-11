@@ -6,7 +6,7 @@
         SizeToContent="WidthAndHeight"
         ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen"
-        Background="#0E0E10"
+        Background="{DynamicResource BgBrush}"
         FontFamily="Segoe UI"
         Loaded="Window_Loaded">
 
@@ -14,8 +14,8 @@
 
     <!-- ════════ Full card ════════ -->
     <Border x:Name="Card"
-            Background="{StaticResource SurfaceBrush}"
-            BorderBrush="{StaticResource BorderBrush2}"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush2}"
             BorderThickness="1"
             CornerRadius="20"
             Margin="18"
@@ -30,9 +30,12 @@
         <Grid Margin="0,0,0,18">
           <TextBlock Text="SHINY COUNTER"
                      FontSize="13" FontWeight="Medium"
-                     Foreground="{StaticResource MutedBrush}"
+                     Foreground="{DynamicResource MutedBrush}"
                      VerticalAlignment="Center"/>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="SettingsBtn" Style="{StaticResource GhostBtn}"
+                    Content="⚙" ToolTip="Settings"
+                    Margin="0,0,6,0" Click="Settings_Click"/>
             <ToggleButton x:Name="SoundToggleBtn" Style="{StaticResource PinToggle}"
                           Content="🔊" ToolTip="Tick sound on each count"
                           Margin="0,0,6,0"
@@ -46,18 +49,18 @@
                     Margin="0,0,8,0" Click="Mini_Click"/>
             <Border x:Name="StatusPill"
                     Background="Transparent"
-                    BorderBrush="{StaticResource BorderBrush2}"
+                    BorderBrush="{DynamicResource BorderBrush2}"
                     BorderThickness="1"
                     CornerRadius="999"
                     Padding="10,4"
                     VerticalAlignment="Center">
               <StackPanel Orientation="Horizontal">
                 <Ellipse x:Name="StatusDot" Width="6" Height="6"
-                         Fill="{StaticResource MutedBrush}"
+                         Fill="{DynamicResource MutedBrush}"
                          VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <TextBlock x:Name="StatusText" Text="no controller"
                            FontSize="11" FontWeight="Medium"
-                           Foreground="{StaticResource MutedBrush}"/>
+                           Foreground="{DynamicResource MutedBrush}"/>
               </StackPanel>
             </Border>
           </StackPanel>
@@ -86,7 +89,7 @@
 
         <!-- Counter -->
         <TextBlock Text="SOFT RESETS" FontSize="12"
-                   Foreground="{StaticResource MutedBrush}"
+                   Foreground="{DynamicResource MutedBrush}"
                    HorizontalAlignment="Center" Margin="0,0,0,2"/>
         <TextBlock x:Name="CounterText" Text="0"
                    FontSize="80" FontWeight="SemiBold"
@@ -94,18 +97,18 @@
                    Margin="0,0,0,6"/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
           <TextBlock Text="count:" FontSize="11"
-                     Foreground="{StaticResource MutedBrush}"
+                     Foreground="{DynamicResource MutedBrush}"
                      VerticalAlignment="Center" Margin="0,0,6,0"/>
           <Button x:Name="BindBtn" Style="{StaticResource PillBtn}"
                   Content="rebind" Click="BindBtn_Click"/>
           <TextBlock Text="undo:" FontSize="11"
-                     Foreground="{StaticResource MutedBrush}"
+                     Foreground="{DynamicResource MutedBrush}"
                      VerticalAlignment="Center" Margin="14,0,6,0"/>
           <Button x:Name="UndoBindBtn" Style="{StaticResource PillBtn}"
                   Content="rebind" Click="UndoBindBtn_Click"/>
         </StackPanel>
         <TextBlock x:Name="BoundDisplay" Text="count: not bound · undo: not bound"
-                   FontSize="11" Foreground="{StaticResource MutedBrush}"
+                   FontSize="11" Foreground="{DynamicResource MutedBrush}"
                    HorizontalAlignment="Center" Margin="0,0,0,18"
                    ToolTip="Triggers are global — they count even while your game window is focused"/>
 
@@ -118,26 +121,26 @@
           </Grid.ColumnDefinitions>
           <Border Style="{StaticResource StatCard}" Grid.Column="0" Margin="0,0,5,0">
             <StackPanel>
-              <TextBlock Text="your odds" FontSize="11" Foreground="{StaticResource MutedBrush}"
+              <TextBlock Text="your odds" FontSize="11" Foreground="{DynamicResource MutedBrush}"
                          HorizontalAlignment="Center" Margin="0,0,0,4"/>
               <TextBlock x:Name="OddsVal" Text="—" FontSize="15" FontWeight="Medium"
-                         Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center"/>
+                         Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"/>
             </StackPanel>
           </Border>
           <Border Style="{StaticResource StatCard}" Grid.Column="1" Margin="5,0">
             <StackPanel>
-              <TextBlock Text="50% at" FontSize="11" Foreground="{StaticResource MutedBrush}"
+              <TextBlock Text="50% at" FontSize="11" Foreground="{DynamicResource MutedBrush}"
                          HorizontalAlignment="Center" Margin="0,0,0,4"/>
               <TextBlock x:Name="ExpectedVal" Text="—" FontSize="15" FontWeight="Medium"
-                         Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center"/>
+                         Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"/>
             </StackPanel>
           </Border>
           <Border Style="{StaticResource StatCard}" Grid.Column="2" Margin="5,0,0,0">
             <StackPanel>
-              <TextBlock Text="chance hit" FontSize="11" Foreground="{StaticResource MutedBrush}"
+              <TextBlock Text="chance hit" FontSize="11" Foreground="{DynamicResource MutedBrush}"
                          HorizontalAlignment="Center" Margin="0,0,0,4"/>
               <TextBlock x:Name="ProbVal" Text="0%" FontSize="15" FontWeight="Medium"
-                         Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center"/>
+                         Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center"/>
             </StackPanel>
           </Border>
         </Grid>
@@ -149,94 +152,45 @@
           </Grid.ColumnDefinitions>
           <Border Style="{StaticResource StatCard}" Grid.Column="0" Margin="0,0,5,0">
             <StackPanel>
-              <TextBlock Text="time hunted" FontSize="11" Foreground="{StaticResource MutedBrush}"
+              <TextBlock Text="time hunted" FontSize="11" Foreground="{DynamicResource MutedBrush}"
                          HorizontalAlignment="Center" Margin="0,0,0,4"/>
               <TextBlock x:Name="TimeVal" Text="—" FontSize="15" FontWeight="Medium"
-                         Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center"/>
+                         Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"/>
             </StackPanel>
           </Border>
           <Border Style="{StaticResource StatCard}" Grid.Column="1" Margin="5,0">
             <StackPanel>
-              <TextBlock Text="pace" FontSize="11" Foreground="{StaticResource MutedBrush}"
+              <TextBlock Text="pace" FontSize="11" Foreground="{DynamicResource MutedBrush}"
                          HorizontalAlignment="Center" Margin="0,0,0,4"/>
               <TextBlock x:Name="RateVal" Text="—" FontSize="15" FontWeight="Medium"
-                         Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center"/>
+                         Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"/>
             </StackPanel>
           </Border>
           <Border Style="{StaticResource StatCard}" Grid.Column="2" Margin="5,0,0,0">
             <StackPanel>
-              <TextBlock Text="50% eta" FontSize="11" Foreground="{StaticResource MutedBrush}"
+              <TextBlock Text="50% eta" FontSize="11" Foreground="{DynamicResource MutedBrush}"
                          HorizontalAlignment="Center" Margin="0,0,0,4"/>
               <TextBlock x:Name="EtaVal" Text="—" FontSize="15" FontWeight="Medium"
-                         Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center"/>
+                         Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"/>
             </StackPanel>
           </Border>
         </Grid>
 
         <!-- Probability bar -->
         <Border x:Name="BarTrack" Height="3" CornerRadius="2"
-                Background="{StaticResource HintBrush}">
+                Background="{DynamicResource HintBrush}">
           <Border x:Name="BarFill" Height="3" CornerRadius="2" Width="0"
-                  Background="{StaticResource AccentBrush}"
+                  Background="{DynamicResource AccentBrush}"
                   HorizontalAlignment="Left"/>
         </Border>
         <Grid Margin="0,6,0,0">
-          <TextBlock Text="0%" FontSize="11" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Left"/>
+          <TextBlock Text="0%" FontSize="11" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Left"/>
           <TextBlock x:Name="BarLabel" Text="0% probability" FontSize="11"
-                     Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center"/>
-          <TextBlock Text="100%" FontSize="11" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right"/>
+                     Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center"/>
+          <TextBlock Text="100%" FontSize="11" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Right"/>
         </Grid>
 
-        <Border Height="1" Background="{StaticResource BorderBrush2}" Margin="0,18"/>
-
-        <!-- Shiny odds -->
-        <TextBlock Text="shiny odds (1 / N)" Style="{StaticResource RowLabel}"/>
-        <Grid Margin="0,0,0,16">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto"/>
-            <ColumnDefinition/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
-          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-            <RadioButton x:Name="Odds8192" Style="{StaticResource PillRadio}" GroupName="odds"
-                         Content="8192" Tag="8192" Checked="OddsPill_Checked"/>
-            <RadioButton x:Name="Odds4096" Style="{StaticResource PillRadio}" GroupName="odds"
-                         Content="4096" Tag="4096" Checked="OddsPill_Checked"/>
-            <RadioButton x:Name="Odds1365" Style="{StaticResource PillRadio}" GroupName="odds"
-                         Content="1365" Tag="1365.33" ToolTip="Shiny charm"
-                         Checked="OddsPill_Checked"/>
-            <RadioButton x:Name="Odds512" Style="{StaticResource PillRadio}" GroupName="odds"
-                         Content="512" Tag="512" Checked="OddsPill_Checked"/>
-          </StackPanel>
-          <TextBox x:Name="OddsInput" Grid.Column="1" Style="{StaticResource NumBox}"
-                   Tag="custom" Height="32" Margin="0,0,8,0" KeyDown="OddsInput_KeyDown"/>
-          <Button Grid.Column="2" Style="{StaticResource Btn}" Content="set"
-                  Height="32" Width="60" Click="SetOddsCustom_Click"/>
-        </Grid>
-
-        <!-- Step -->
-        <TextBlock Text="increment per press" Style="{StaticResource RowLabel}"/>
-        <Grid Margin="0,0,0,16">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto"/>
-            <ColumnDefinition/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
-          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-            <RadioButton x:Name="Step1" Style="{StaticResource PillRadio}" GroupName="step"
-                         Content="1" Tag="1" Checked="StepPill_Checked"/>
-            <RadioButton x:Name="Step2" Style="{StaticResource PillRadio}" GroupName="step"
-                         Content="2" Tag="2" Checked="StepPill_Checked"/>
-            <RadioButton x:Name="Step3" Style="{StaticResource PillRadio}" GroupName="step"
-                         Content="3" Tag="3" Checked="StepPill_Checked"/>
-            <RadioButton x:Name="Step4" Style="{StaticResource PillRadio}" GroupName="step"
-                         Content="4" Tag="4" Checked="StepPill_Checked"/>
-          </StackPanel>
-          <TextBox x:Name="StepInput" Grid.Column="1" Style="{StaticResource NumBox}"
-                   Tag="custom" Height="32" Margin="0,0,8,0" KeyDown="StepInput_KeyDown"/>
-          <Button Grid.Column="2" Style="{StaticResource Btn}" Content="set"
-                  Height="32" Width="60" Click="SetStepCustom_Click"/>
-        </Grid>
+        <Border Height="1" Background="{DynamicResource BorderBrush2}" Margin="0,18"/>
 
         <!-- Action buttons -->
         <Grid Margin="0,0,0,8">
@@ -246,69 +200,39 @@
             <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
           <Button x:Name="IncrementBtn" Style="{StaticResource Btn}"
-                  Background="{StaticResource AccentDimBrush}"
-                  BorderBrush="{StaticResource AccentBorderBrush}"
-                  Foreground="{StaticResource AccentBrush}"
-                  Tag="{StaticResource AccentHoverBrush}"
+                  Background="{DynamicResource AccentDimBrush}"
+                  BorderBrush="{DynamicResource AccentBorderBrush}"
+                  Foreground="{DynamicResource AccentBrush}"
+                  Tag="{DynamicResource AccentHoverBrush}"
                   Content="+ 1 manual" Margin="0,0,8,0"
                   Click="Increment_Click"/>
           <Button Grid.Column="1" Style="{StaticResource Btn}" Content="undo"
                   Width="80" Margin="0,0,8,0" Click="Undo_Click"
                   ToolTip="Subtract one increment"/>
           <Button Grid.Column="2" Style="{StaticResource Btn}"
-                  Background="{StaticResource DangerDimBrush}"
-                  BorderBrush="{StaticResource DangerBorderBrush}"
-                  Foreground="{StaticResource DangerBrush}"
-                  Tag="{StaticResource DangerHoverBrush}"
+                  Background="{DynamicResource DangerDimBrush}"
+                  BorderBrush="{DynamicResource DangerBorderBrush}"
+                  Foreground="{DynamicResource DangerBrush}"
+                  Tag="{DynamicResource DangerHoverBrush}"
                   Content="reset" Width="80" Click="Reset_Click"/>
         </Grid>
 
         <!-- Found + history -->
-        <Grid Margin="0,0,0,16">
+        <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition/>
             <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
           <Button Style="{StaticResource Btn}"
-                  Background="{StaticResource SuccessDimBrush}"
-                  BorderBrush="{StaticResource SuccessBorderBrush}"
-                  Foreground="{StaticResource SuccessBrush}"
-                  Tag="{StaticResource SuccessHoverBrush}"
+                  Background="{DynamicResource SuccessDimBrush}"
+                  BorderBrush="{DynamicResource SuccessBorderBrush}"
+                  Foreground="{DynamicResource SuccessBrush}"
+                  Tag="{DynamicResource SuccessHoverBrush}"
                   Content="✨ found!" Margin="0,0,8,0"
                   ToolTip="Log this hunt to history and reset the counter"
                   Click="Found_Click"/>
           <Button Grid.Column="1" Style="{StaticResource Btn}" Content="history"
                   Width="90" Click="History_Click"/>
-        </Grid>
-
-        <!-- Manual set -->
-        <TextBlock Text="set counter manually" Style="{StaticResource RowLabel}"/>
-        <Grid Margin="0,0,0,16">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
-          <TextBox x:Name="ManualInput" Style="{StaticResource NumBox}" Tag="e.g. 167"
-                   Height="32" Margin="0,0,8,0" KeyDown="ManualInput_KeyDown"/>
-          <Button Grid.Column="1" Style="{StaticResource Btn}" Content="set"
-                  Height="32" Width="60" Click="SetManual_Click"/>
-        </Grid>
-
-        <!-- Window size -->
-        <Grid>
-          <TextBlock Text="window size" FontSize="12"
-                     Foreground="{StaticResource MutedBrush}"
-                     VerticalAlignment="Center"/>
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-            <RadioButton x:Name="Scale70" Style="{StaticResource PillRadio}" GroupName="scale"
-                         Content="70%" Tag="0.7" Checked="ScalePill_Checked"/>
-            <RadioButton x:Name="Scale85" Style="{StaticResource PillRadio}" GroupName="scale"
-                         Content="85%" Tag="0.85" Checked="ScalePill_Checked"/>
-            <RadioButton x:Name="Scale100" Style="{StaticResource PillRadio}" GroupName="scale"
-                         Content="100%" Tag="1.0" Checked="ScalePill_Checked"/>
-            <RadioButton x:Name="Scale115" Style="{StaticResource PillRadio}" GroupName="scale"
-                         Content="115%" Tag="1.15" Margin="0" Checked="ScalePill_Checked"/>
-          </StackPanel>
         </Grid>
 
       </StackPanel>
@@ -317,8 +241,8 @@
     <!-- ════════ Mini overlay ════════ -->
     <Border x:Name="MiniPanel"
             Visibility="Collapsed"
-            Background="{StaticResource SurfaceBrush}"
-            BorderBrush="{StaticResource BorderHoverBrush}"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderHoverBrush}"
             BorderThickness="1"
             CornerRadius="12"
             Padding="16,8,8,10"
@@ -327,7 +251,7 @@
       <StackPanel>
         <Grid>
           <TextBlock x:Name="MiniName" Text="Hunt 1"
-                     FontSize="10" Foreground="{StaticResource MutedBrush}"
+                     FontSize="10" Foreground="{DynamicResource MutedBrush}"
                      VerticalAlignment="Center" Margin="0,0,30,0"
                      MaxWidth="120" TextTrimming="CharacterEllipsis"/>
           <Button x:Name="MiniRestoreBtn" Style="{StaticResource GhostBtn}"
@@ -338,7 +262,7 @@
                    FontSize="30" FontWeight="SemiBold"
                    HorizontalAlignment="Center" Margin="0,0,8,0"/>
         <TextBlock x:Name="MiniProb" Text="0% chance hit"
-                   FontSize="10" Foreground="{StaticResource MutedBrush}"
+                   FontSize="10" Foreground="{DynamicResource MutedBrush}"
                    HorizontalAlignment="Center" Margin="0,0,8,0"/>
       </StackPanel>
     </Border>
