@@ -572,6 +572,10 @@ public partial class MainWindow : Window
     {
         _counterBrush.BeginAnimation(SolidColorBrush.ColorProperty, null);
         _counterBrush.Color = ThemeManager.Text;
+
+        var balls = ThemeManager.CurrentDecor == "pokeballs" ? Visibility.Visible : Visibility.Collapsed;
+        PokeballIcon.Visibility = balls;
+        MasterballIcon.Visibility = balls;
         // Re-resolve the status pill brushes for the new palette
         bool wasConnected = _padConnected;
         string name = _padName;

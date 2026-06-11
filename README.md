@@ -36,7 +36,7 @@ Grab `ShinyCounter.exe` from the [latest release](../../releases/latest) and run
 
 ## Making a theme
 
-Themes are JSON files with 12 colors — hover/dim/border shades are derived automatically. Copy a stock file from `%APPDATA%\ShinyCounter\Themes` (created on first run), rename it, change the colors, then pick it in ⚙ settings:
+Themes are JSON files with 12 colors — hover/dim/border shades are derived automatically. Copy a stock file from `%APPDATA%\ShinyCounter\Themes`, **rename it** (stock files are refreshed on every launch), change the colors, then pick it in ⚙ settings. Add `"Decor": "pokeballs"` to show the Pokéball and Masterball beside the counter, like the Pokémon theme does:
 
 ```json
 {

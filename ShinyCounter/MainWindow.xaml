@@ -91,10 +91,47 @@
         <TextBlock Text="SOFT RESETS" FontSize="12"
                    Foreground="{DynamicResource MutedBrush}"
                    HorizontalAlignment="Center" Margin="0,0,0,2"/>
-        <TextBlock x:Name="CounterText" Text="0"
-                   FontSize="80" FontWeight="SemiBold"
-                   HorizontalAlignment="Center"
-                   Margin="0,0,0,6"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,6">
+
+          <!-- Pokéball (decor themes only) -->
+          <Grid x:Name="PokeballIcon" Width="36" Height="36" Visibility="Collapsed"
+                VerticalAlignment="Center" Margin="0,0,20,0">
+            <Ellipse Fill="#FFFFFF"/>
+            <Ellipse Fill="#EE1515">
+              <Ellipse.Clip>
+                <RectangleGeometry Rect="0,0,36,18"/>
+              </Ellipse.Clip>
+            </Ellipse>
+            <Rectangle Fill="#1A1A1A" Height="4" VerticalAlignment="Center"/>
+            <Ellipse Width="13" Height="13" Fill="#FFFFFF" Stroke="#1A1A1A" StrokeThickness="3"/>
+            <Ellipse Stroke="#1A1A1A" StrokeThickness="2"/>
+          </Grid>
+
+          <TextBlock x:Name="CounterText" Text="0"
+                     FontSize="80" FontWeight="SemiBold"
+                     VerticalAlignment="Center"/>
+
+          <!-- Masterball (decor themes only) -->
+          <Grid x:Name="MasterballIcon" Width="36" Height="36" Visibility="Collapsed"
+                VerticalAlignment="Center" Margin="20,0,0,0">
+            <Ellipse Fill="#FFFFFF"/>
+            <Ellipse Fill="#52489C">
+              <Ellipse.Clip>
+                <RectangleGeometry Rect="0,0,36,18"/>
+              </Ellipse.Clip>
+            </Ellipse>
+            <Ellipse Width="9" Height="7" Fill="#E85382"
+                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3,7,0,0"/>
+            <Ellipse Width="9" Height="7" Fill="#E85382"
+                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,7,3,0"/>
+            <TextBlock Text="M" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF"
+                       HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,1,0,0"/>
+            <Rectangle Fill="#1A1A1A" Height="4" VerticalAlignment="Center"/>
+            <Ellipse Width="13" Height="13" Fill="#FFFFFF" Stroke="#1A1A1A" StrokeThickness="3"/>
+            <Ellipse Stroke="#1A1A1A" StrokeThickness="2"/>
+          </Grid>
+
+        </StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
           <TextBlock Text="count:" FontSize="11"
                      Foreground="{DynamicResource MutedBrush}"

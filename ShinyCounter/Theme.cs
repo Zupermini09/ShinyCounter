@@ -10,6 +10,7 @@ namespace ShinyCounter;
 public sealed class Theme
 {
     public string Name { get; set; } = "";
+    public string Decor { get; set; } = ""; // "" or "pokeballs"
     public Dictionary<string, string> Colors { get; set; } = new();
 }
 
@@ -23,6 +24,7 @@ public static class ThemeManager
     public static Color Accent { get; private set; } = (Color)ColorConverter.ConvertFromString("#A78BFA");
     public static Color Text { get; private set; } = (Color)ColorConverter.ConvertFromString("#F4F4F5");
     public static bool DarkTitleBar { get; private set; } = true;
+    public static string CurrentDecor { get; private set; } = "";
 
     private static readonly Dictionary<string, string> Dark = new()
     {
@@ -42,31 +44,30 @@ public static class ThemeManager
 
     private static readonly Dictionary<string, string> Pokemon = new()
     {
-        ["bg"] = "#0D1B2A", ["surface"] = "#152838", ["surface2"] = "#1D3349",
-        ["border"] = "#1AFFFFFF", ["borderHover"] = "#2EFFFFFF",
-        ["text"] = "#F5F7FA", ["muted"] = "#8093A7", ["hint"] = "#33475C",
-        ["accent"] = "#FFCB05", ["danger"] = "#EE1515", ["success"] = "#4CAF6D", ["warning"] = "#FF9C33",
+        ["bg"] = "#0A1A2F", ["surface"] = "#132845", ["surface2"] = "#1B365C",
+        ["border"] = "#24FFFFFF", ["borderHover"] = "#3BFFFFFF",
+        ["text"] = "#F8FAFF", ["muted"] = "#8FA3C2", ["hint"] = "#2E4A73",
+        ["accent"] = "#FFCB05", ["danger"] = "#EE1515", ["success"] = "#43C06E", ["warning"] = "#FF9C33",
     };
 
-    /// Write the stock theme files if missing so the community has live examples to copy.
+    /// Write the stock theme files so the community has live examples to copy.
+    /// Stock files are refreshed every launch — copy and rename one to customize it.
     public static void EnsureStockThemes()
     {
         try
         {
             Directory.CreateDirectory(ThemesDir);
-            WriteIfMissing("Dark", Dark);
-            WriteIfMissing("Light", Light);
-            WriteIfMissing("Pokemon", Pokemon);
+            WriteStock("Dark", Dark, "");
+            WriteStock("Light", Light, "");
+            WriteStock("Pokemon", Pokemon, "pokeballs");
         }
         catch { }
     }
 
-    private static void WriteIfMissing(string name, Dictionary<string, string> colors)
+    private static void WriteStock(string name, Dictionary<string, string> colors, string decor)
     {
-        string path = Path.Combine(ThemesDir, name + ".json");
-        if (File.Exists(path)) return;
-        File.WriteAllText(path, JsonSerializer.Serialize(
-            new Theme { Name = name, Colors = colors },
+        File.WriteAllText(Path.Combine(ThemesDir, name + ".json"), JsonSerializer.Serialize(
+            new Theme { Name = name, Decor = decor, Colors = colors },
             new JsonSerializerOptions { WriteIndented = true }));
     }
 
@@ -116,6 +117,7 @@ public static class ThemeManager
               success = C("success"), warning = C("warning");
         Accent = accent;
         Text = C("text");
+        CurrentDecor = theme.Decor ?? "";
 
         SetBrush("BgBrush", bg);
         SetBrush("SurfaceBrush", C("surface"));
