@@ -38,6 +38,10 @@ dotnet publish ShinyCounter/ShinyCounter.csproj -c Release -r win-x64 --self-con
 
 WPF, .NET 8, no third-party packages. Controller input via `Windows.Gaming.Input`, global keybinds via a low-level keyboard hook (listen-only — keystrokes are never blocked or modified).
 
+## Support
+
+Shiny Counter is free and always will be. If it helped you land a shiny, you can [buy me a coffee](https://buymeacoffee.com/emilianovec) ☕ — totally optional.
+
 ## License
 
 [MIT](LICENSE)
