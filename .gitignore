@@ -1,0 +1,12 @@
+# Build output
+ShinyCounter/bin/
+ShinyCounter/obj/
+ShinyCounter/publish/
+release/
+
+# Local copy of the app (releases carry the binary instead)
+/ShinyCounter.exe
+
+# IDE
+.vs/
+*.user

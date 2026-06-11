@@ -1,0 +1,948 @@
+using System.Globalization;
+using System.IO;
+using System.Media;
+using System.Threading;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
+using Windows.Gaming.Input;
+
+namespace ShinyCounter;
+
+public partial class MainWindow : Window
+{
+    // ── State ────────────────────────────────────────────────────────────────
+    private AppSettings _settings = new();
+    private Hunt H => _settings.Hunts[_settings.ActiveHunt];
+
+    private enum BindTarget { None, Count, Undo }
+    private BindTarget _listening = BindTarget.None;
+
+    private bool _keyHeld, _undoKeyHeld, _padHeld, _undoPadHeld;
+    private bool _loading, _suppressHuntSelect, _mini;
+    private DateTime? _lastIncrementAt;
+    private const double IdleCapSeconds = 180; // AFK gaps longer than this don't count as hunt time
+
+    private bool _padConnected;
+    private string _padName = "";
+
+    private readonly DispatcherTimer _padTimer;
+    private readonly SolidColorBrush _counterBrush;
+    private SoundPlayer? _tick, _tickLow, _chime;
+    private static readonly Color AccentColor = Color.FromRgb(0xA7, 0x8B, 0xFA);
+    private static readonly Color TextColor = Color.FromRgb(0xF4, 0xF4, 0xF5);
+
+    private static readonly string SettingsDir =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ShinyCounter");
+    private static readonly string SettingsPath = Path.Combine(SettingsDir, "settings.json");
+
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        _counterBrush = new SolidColorBrush(TextColor);
+        CounterText.Foreground = _counterBrush;
+        MiniCount.Foreground = _counterBrush;
+
+        InitSounds();
+
+        _padTimer = new DispatcherTimer(DispatcherPriority.Input)
+        {
+            Interval = TimeSpan.FromMilliseconds(15)
+        };
+        _padTimer.Tick += PollGamepads;
+        _padTimer.Start();
+    }
+
+    // ── Window lifecycle ─────────────────────────────────────────────────────
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        var handle = new WindowInteropHelper(this).Handle;
+        int dark = 1;
+        DwmSetWindowAttribute(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
+        InstallKeyboardHook();
+    }
+
+    private void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        LoadSettings();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _padTimer.Stop();
+        RemoveKeyboardHook();
+        SaveSettings();
+        base.OnClosed(e);
+    }
+
+    // ── Binding (trigger buttons) ────────────────────────────────────────────
+
+    private Button ListenButton => _listening == BindTarget.Undo ? UndoBindBtn : BindBtn;
+
+    private void BindBtn_Click(object sender, RoutedEventArgs e) => StartListening(BindTarget.Count);
+
+    private void UndoBindBtn_Click(object sender, RoutedEventArgs e) => StartListening(BindTarget.Undo);
+
+    private void StartListening(BindTarget target)
+    {
+        if (_listening != BindTarget.None) CancelBinding();
+        _listening = target;
+        ListenButton.Content = "press key or button…";
+        BoundDisplay.Text = "waiting… (Esc cancels)";
+        StartBlink(ListenButton);
+    }
+
+    private void CancelBinding()
+    {
+        if (_listening == BindTarget.None) return;
+        StopBlink(ListenButton);
+        ListenButton.Content = "rebind";
+        _listening = BindTarget.None;
+        UpdateBoundDisplay();
+    }
+
+    private void FinishKeyBinding(int vk)
+    {
+        if (_listening == BindTarget.Count)
+        {
+            H.BindType = "key"; H.BindKey = vk;
+            _keyHeld = true; // the key that bound is currently down — don't count it
+        }
+        else
+        {
+            H.UndoBindType = "key"; H.UndoBindKey = vk;
+            _undoKeyHeld = true;
+        }
+        EndBinding();
+    }
+
+    private void FinishPadBinding(int buttonIndex)
+    {
+        if (_listening == BindTarget.Count)
+        {
+            H.BindType = "pad"; H.BindButton = buttonIndex;
+            _padHeld = true;
+        }
+        else
+        {
+            H.UndoBindType = "pad"; H.UndoBindButton = buttonIndex;
+            _undoPadHeld = true;
+        }
+        EndBinding();
+    }
+
+    private void EndBinding()
+    {
+        StopBlink(ListenButton);
+        ListenButton.Content = "rebind";
+        _listening = BindTarget.None;
+        UpdateBoundDisplay();
+        SaveSettings();
+    }
+
+    private void UpdateBoundDisplay()
+    {
+        BoundDisplay.Text =
+            $"count: {BindDesc(H.BindType, H.BindKey, H.BindButton)}" +
+            $"  ·  undo: {BindDesc(H.UndoBindType, H.UndoBindKey, H.UndoBindButton)}";
+    }
+
+    private static string BindDesc(string type, int vk, int button) => type switch
+    {
+        "key" => KeyLabel(vk),
+        "pad" => $"Button {button}",
+        _ => "not bound",
+    };
+
+    private static string KeyLabel(int vk)
+    {
+        var key = KeyInterop.KeyFromVirtualKey(vk);
+        return key switch
+        {
+            Key.Space => "Space",
+            Key.Return => "Enter",
+            Key.None => $"VK {vk}",
+            _ => key.ToString(),
+        };
+    }
+
+    // ── Global keyboard hook ─────────────────────────────────────────────────
+
+    private const int WH_KEYBOARD_LL = 13;
+    private const int WM_KEYDOWN = 0x0100;
+    private const int WM_KEYUP = 0x0101;
+    private const int WM_SYSKEYDOWN = 0x0104;
+    private const int WM_SYSKEYUP = 0x0105;
+    private const int VK_ESCAPE = 0x1B;
+
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+    private LowLevelKeyboardProc? _hookProc;
+    private IntPtr _hookId = IntPtr.Zero;
+
+    private void InstallKeyboardHook()
+    {
+        _hookProc = HookCallback;
+        _hookId = SetWindowsHookEx(WH_KEYBOARD_LL, _hookProc, GetModuleHandle(null), 0);
+    }
+
+    private void RemoveKeyboardHook()
+    {
+        if (_hookId != IntPtr.Zero)
+        {
+            UnhookWindowsHookEx(_hookId);
+            _hookId = IntPtr.Zero;
+        }
+    }
+
+    private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0)
+        {
+            int msg = (int)wParam;
+            int vk = Marshal.ReadInt32(lParam); // KBDLLHOOKSTRUCT.vkCode
+
+            if (msg is WM_KEYDOWN or WM_SYSKEYDOWN) OnGlobalKeyDown(vk);
+            else if (msg is WM_KEYUP or WM_SYSKEYUP) OnGlobalKeyUp(vk);
+        }
+        return CallNextHookEx(_hookId, nCode, wParam, lParam);
+    }
+
+    private void OnGlobalKeyDown(int vk)
+    {
+        if (_loading || _settings.Hunts.Count == 0) return;
+
+        if (_listening != BindTarget.None)
+        {
+            if (vk == VK_ESCAPE) CancelBinding();
+            else FinishKeyBinding(vk);
+            return;
+        }
+
+        bool typing = IsActive && Keyboard.FocusedElement is TextBox;
+
+        if (H.BindType == "key" && vk == H.BindKey)
+        {
+            if (!_keyHeld) // ignore key auto-repeat
+            {
+                _keyHeld = true;
+                if (!typing) Increment();
+            }
+        }
+
+        if (H.UndoBindType == "key" && vk == H.UndoBindKey)
+        {
+            if (!_undoKeyHeld)
+            {
+                _undoKeyHeld = true;
+                if (!typing) Undo();
+            }
+        }
+    }
+
+    private void OnGlobalKeyUp(int vk)
+    {
+        if (_loading || _settings.Hunts.Count == 0) return;
+        if (H.BindType == "key" && vk == H.BindKey) _keyHeld = false;
+        if (H.UndoBindType == "key" && vk == H.UndoBindKey) _undoKeyHeld = false;
+    }
+
+    // ── Gamepad polling (Windows.Gaming.Input — works in background) ─────────
+
+    private void PollGamepads(object? sender, EventArgs e)
+    {
+        if (_loading || _settings.Hunts.Count == 0) return;
+
+        IReadOnlyList<RawGameController> pads;
+        try { pads = RawGameController.RawGameControllers; }
+        catch { return; }
+
+        bool countPressed = false, undoPressed = false, isSony = false;
+
+        foreach (var gp in pads)
+        {
+            bool[] buttons = new bool[gp.ButtonCount];
+            var switches = new GameControllerSwitchPosition[gp.SwitchCount];
+            double[] axes = new double[gp.AxisCount];
+            try { gp.GetCurrentReading(buttons, switches, axes); }
+            catch { continue; }
+
+            if (gp.HardwareVendorId == 0x054C) isSony = true;
+
+            if (_listening != BindTarget.None)
+            {
+                for (int i = 0; i < buttons.Length; i++)
+                {
+                    if (buttons[i]) { FinishPadBinding(i); return; }
+                }
+            }
+            else
+            {
+                if (H.BindType == "pad" && H.BindButton < buttons.Length && buttons[H.BindButton])
+                    countPressed = true;
+                if (H.UndoBindType == "pad" && H.UndoBindButton < buttons.Length && buttons[H.UndoBindButton])
+                    undoPressed = true;
+            }
+        }
+
+        if (_listening == BindTarget.None)
+        {
+            if (countPressed && !_padHeld) Increment();
+            _padHeld = countPressed;
+
+            if (undoPressed && !_undoPadHeld) Undo();
+            _undoPadHeld = undoPressed;
+        }
+
+        UpdateStatusPill(pads.Count > 0, isSony ? "PS5 connected" : "controller connected");
+    }
+
+    private void UpdateStatusPill(bool connected, string name)
+    {
+        if (connected == _padConnected && (!connected || name == _padName)) return;
+        _padConnected = connected;
+        _padName = name;
+
+        if (connected)
+        {
+            StatusText.Text = name;
+            StatusText.Foreground = (Brush)FindResource("SuccessBrush");
+            StatusDot.Fill = (Brush)FindResource("SuccessBrush");
+            StatusPill.Background = (Brush)FindResource("SuccessDimBrush");
+            StatusPill.BorderBrush = (Brush)FindResource("SuccessBrush");
+            var pulse = new DoubleAnimation(1, 0.35, TimeSpan.FromSeconds(1))
+            {
+                AutoReverse = true,
+                RepeatBehavior = RepeatBehavior.Forever
+            };
+            StatusDot.BeginAnimation(OpacityProperty, pulse);
+        }
+        else
+        {
+            StatusText.Text = "no controller";
+            StatusText.Foreground = (Brush)FindResource("MutedBrush");
+            StatusDot.Fill = (Brush)FindResource("MutedBrush");
+            StatusPill.Background = Brushes.Transparent;
+            StatusPill.BorderBrush = (Brush)FindResource("BorderBrush2");
+            StatusDot.BeginAnimation(OpacityProperty, null);
+            StatusDot.Opacity = 1;
+        }
+    }
+
+    // ── Counter ──────────────────────────────────────────────────────────────
+
+    private void Increment()
+    {
+        AccrueHuntTime();
+        SetCount(H.Count + H.Step, flash: true);
+        PlaySound(_tick);
+    }
+
+    private void AccrueHuntTime()
+    {
+        var now = DateTime.UtcNow;
+        if (_lastIncrementAt is DateTime last)
+        {
+            H.ElapsedSeconds += Math.Min((now - last).TotalSeconds, IdleCapSeconds);
+        }
+        _lastIncrementAt = now;
+    }
+
+    private void Increment_Click(object sender, RoutedEventArgs e) => Increment();
+
+    private void Undo()
+    {
+        if (H.Count == 0) return;
+        SetCount(Math.Max(0, H.Count - H.Step));
+        PlaySound(_tickLow);
+    }
+
+    private void Undo_Click(object sender, RoutedEventArgs e) => Undo();
+
+    private void Reset_Click(object sender, RoutedEventArgs e)
+    {
+        if (H.Count > 0 &&
+            MessageBox.Show(this, "Reset counter to 0?", "Shiny Counter",
+                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+        H.ElapsedSeconds = 0;
+        _lastIncrementAt = null;
+        SetCount(0);
+    }
+
+    private void SetManual_Click(object sender, RoutedEventArgs e) => ApplyManualCount();
+
+    private void ManualInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) ApplyManualCount();
+    }
+
+    private void ApplyManualCount()
+    {
+        if (long.TryParse(ManualInput.Text.Trim().Replace(",", "").Replace(" ", ""), out long v) && v >= 0)
+        {
+            SetCount(v, flash: true);
+            ManualInput.Text = "";
+        }
+    }
+
+    private void SetCount(long value, bool flash = false)
+    {
+        H.Count = value;
+        string text = value.ToString("N0");
+        CounterText.Text = text;
+        MiniCount.Text = text;
+        if (flash) FlashCounter();
+        UpdateStats();
+        SaveSettings();
+    }
+
+    private void FlashCounter()
+    {
+        var anim = new ColorAnimation(AccentColor, TextColor, TimeSpan.FromMilliseconds(300));
+        _counterBrush.BeginAnimation(SolidColorBrush.ColorProperty, anim);
+    }
+
+    // ── Found / history ──────────────────────────────────────────────────────
+
+    private void Found_Click(object sender, RoutedEventArgs e)
+    {
+        if (H.Count == 0)
+        {
+            MessageBox.Show(this, "The counter is at 0 — nothing to log yet.", "Shiny Counter",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (MessageBox.Show(this,
+                $"Log “{H.Name}” as found after {H.Count:N0} resets and reset the counter?",
+                "Shiny found!", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _settings.History.Insert(0, new HistoryEntry
+        {
+            Name = H.Name,
+            Count = H.Count,
+            Odds = H.Odds,
+            ElapsedSeconds = H.ElapsedSeconds,
+            CompletedAt = DateTime.Now,
+        });
+
+        H.ElapsedSeconds = 0;
+        _lastIncrementAt = null;
+        SetCount(0);
+        PlaySound(_chime);
+    }
+
+    private void History_Click(object sender, RoutedEventArgs e)
+    {
+        new HistoryWindow(_settings, SaveSettings) { Owner = this }.ShowDialog();
+    }
+
+    // ── Hunt profiles ────────────────────────────────────────────────────────
+
+    private void RefreshHuntList()
+    {
+        _suppressHuntSelect = true;
+        HuntSelect.ItemsSource = _settings.Hunts.Select(h => h.Name).ToList();
+        HuntSelect.SelectedIndex = _settings.ActiveHunt;
+        _suppressHuntSelect = false;
+    }
+
+    private void HuntSelect_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressHuntSelect || _loading || HuntSelect.SelectedIndex < 0) return;
+        _settings.ActiveHunt = HuntSelect.SelectedIndex;
+        ApplyHuntToUi();
+        SaveSettings();
+    }
+
+    private void NewHunt_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new NameDialog("name the new hunt", $"Hunt {_settings.Hunts.Count + 1}") { Owner = this };
+        if (dlg.ShowDialog() != true || dlg.Result is null) return;
+
+        _settings.Hunts.Add(new Hunt { Name = dlg.Result });
+        _settings.ActiveHunt = _settings.Hunts.Count - 1;
+        RefreshHuntList();
+        ApplyHuntToUi();
+        SaveSettings();
+    }
+
+    private void RenameHunt_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new NameDialog("rename hunt", H.Name) { Owner = this };
+        if (dlg.ShowDialog() != true || dlg.Result is null) return;
+
+        H.Name = dlg.Result;
+        MiniName.Text = H.Name;
+        RefreshHuntList();
+        SaveSettings();
+    }
+
+    private void DeleteHunt_Click(object sender, RoutedEventArgs e)
+    {
+        if (_settings.Hunts.Count == 1)
+        {
+            MessageBox.Show(this, "You can't delete the only hunt — rename or reset it instead.",
+                "Shiny Counter", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (MessageBox.Show(this,
+                $"Delete hunt “{H.Name}” ({H.Count:N0} resets)? This can't be undone.",
+                "Delete hunt", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _settings.Hunts.RemoveAt(_settings.ActiveHunt);
+        _settings.ActiveHunt = Math.Min(_settings.ActiveHunt, _settings.Hunts.Count - 1);
+        RefreshHuntList();
+        ApplyHuntToUi();
+        SaveSettings();
+    }
+
+    /// Push the active hunt's state into every control.
+    private void ApplyHuntToUi()
+    {
+        _loading = true;
+
+        CounterText.Text = H.Count.ToString("N0");
+        MiniCount.Text = H.Count.ToString("N0");
+        MiniName.Text = H.Name;
+        IncrementBtn.Content = $"+ {H.Step} manual";
+        UpdateBoundDisplay();
+
+        StepInput.Text = "";
+        StepInput.Tag = "custom";
+        var stepPill = H.Step switch { 1 => Step1, 2 => Step2, 3 => Step3, 4 => Step4, _ => null };
+        foreach (var rb in new[] { Step1, Step2, Step3, Step4 }) rb.IsChecked = rb == stepPill;
+        if (stepPill is null) StepInput.Tag = H.Step.ToString();
+
+        OddsInput.Text = "";
+        OddsInput.Tag = "custom";
+        RadioButton? oddsPill = H.Odds switch
+        {
+            8192 => Odds8192,
+            4096 => Odds4096,
+            1365.33 => Odds1365,
+            512 => Odds512,
+            _ => null
+        };
+        foreach (var rb in new[] { Odds8192, Odds4096, Odds1365, Odds512 }) rb.IsChecked = rb == oddsPill;
+        if (oddsPill is null) OddsInput.Tag = H.Odds.ToString("0.##");
+
+        _keyHeld = _undoKeyHeld = _padHeld = _undoPadHeld = false;
+        _lastIncrementAt = null;
+
+        _loading = false;
+        UpdateStats();
+    }
+
+    // ── Step ─────────────────────────────────────────────────────────────────
+
+    private void StepPill_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        if (sender is RadioButton rb && int.TryParse((string)rb.Tag, out int v))
+        {
+            SetStep(v);
+            StepInput.Text = "";
+        }
+    }
+
+    private void SetStepCustom_Click(object sender, RoutedEventArgs e) => ApplyCustomStep();
+
+    private void StepInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) ApplyCustomStep();
+    }
+
+    private void ApplyCustomStep()
+    {
+        if (int.TryParse(StepInput.Text.Trim(), out int v) && v >= 1 && v <= 9999)
+        {
+            foreach (var rb in new[] { Step1, Step2, Step3, Step4 }) rb.IsChecked = false;
+            SetStep(v);
+        }
+    }
+
+    private void SetStep(int v)
+    {
+        H.Step = v;
+        IncrementBtn.Content = $"+ {v} manual";
+        SaveSettings();
+    }
+
+    // ── Odds ─────────────────────────────────────────────────────────────────
+
+    private void OddsPill_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        if (sender is RadioButton rb &&
+            double.TryParse((string)rb.Tag, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+        {
+            SetOdds(v);
+            OddsInput.Text = "";
+        }
+    }
+
+    private void SetOddsCustom_Click(object sender, RoutedEventArgs e) => ApplyCustomOdds();
+
+    private void OddsInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) ApplyCustomOdds();
+    }
+
+    private void ApplyCustomOdds()
+    {
+        string raw = OddsInput.Text.Trim();
+        if ((double.TryParse(raw, NumberStyles.Float, CultureInfo.CurrentCulture, out double v) ||
+             double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out v)) && v >= 2)
+        {
+            foreach (var rb in new[] { Odds8192, Odds4096, Odds1365, Odds512 }) rb.IsChecked = false;
+            SetOdds(v);
+        }
+    }
+
+    private void SetOdds(double v)
+    {
+        H.Odds = v;
+        UpdateStats();
+        SaveSettings();
+    }
+
+    // ── Stats ────────────────────────────────────────────────────────────────
+
+    private void UpdateStats()
+    {
+        double fifty = Math.Log(0.5) / Math.Log(1 - 1 / H.Odds);
+        ExpectedVal.Text = Math.Round(fifty).ToString("N0");
+
+        TimeVal.Text = H.ElapsedSeconds >= 1 ? FormatDuration(H.ElapsedSeconds) : "—";
+
+        if (H.Count > 0 && H.ElapsedSeconds >= 60)
+        {
+            double perHour = H.Count / (H.ElapsedSeconds / 3600);
+            RateVal.Text = $"{perHour:N0} / hr";
+
+            double remaining = fifty - H.Count;
+            EtaVal.Text = remaining <= 0 ? "passed" : FormatDuration(remaining / perHour * 3600);
+        }
+        else
+        {
+            RateVal.Text = "—";
+            EtaVal.Text = "—";
+        }
+
+        if (H.Count == 0)
+        {
+            OddsVal.Text = "—";
+            ProbVal.Text = "0%";
+            MiniProb.Text = "0% chance hit";
+            BarFill.Width = 0;
+            BarLabel.Text = "0% probability";
+            return;
+        }
+
+        OddsVal.Text = "1 / " + H.Count.ToString("N0");
+
+        double prob = (1 - Math.Pow(1 - 1 / H.Odds, H.Count)) * 100;
+        string probStr = prob.ToString("F2") + "%";
+        ProbVal.Text = probStr;
+        MiniProb.Text = probStr + " chance hit";
+        BarLabel.Text = probStr + " probability";
+
+        double trackWidth = BarTrack.ActualWidth;
+        if (trackWidth > 0)
+        {
+            BarFill.Width = trackWidth * Math.Min(prob, 100) / 100;
+        }
+    }
+
+    public static string FormatDuration(double seconds)
+    {
+        var ts = TimeSpan.FromSeconds(seconds);
+        if (ts.TotalHours >= 1) return $"{(int)ts.TotalHours}h {ts.Minutes}m";
+        if (ts.TotalMinutes >= 1) return $"{ts.Minutes}m";
+        return $"{(int)seconds}s";
+    }
+
+    // ── Header toggles ───────────────────────────────────────────────────────
+
+    private void Pin_Changed(object sender, RoutedEventArgs e)
+    {
+        Topmost = _mini || PinToggleBtn.IsChecked == true;
+        if (!_loading)
+        {
+            _settings.AlwaysOnTop = PinToggleBtn.IsChecked == true;
+            SaveSettings();
+        }
+    }
+
+    private void Sound_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _settings.SoundOn = SoundToggleBtn.IsChecked == true;
+        SaveSettings();
+        if (_settings.SoundOn) PlaySound(_tick);
+    }
+
+    // ── Window scale ─────────────────────────────────────────────────────────
+
+    private void ScalePill_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        if (sender is RadioButton rb &&
+            double.TryParse((string)rb.Tag, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+        {
+            _settings.UiScale = v;
+            ApplyScale(v);
+            SaveSettings();
+        }
+    }
+
+    private void ApplyScale(double v)
+    {
+        CardScale.ScaleX = v;
+        CardScale.ScaleY = v;
+        // Re-measure the bar fill after layout settles at the new size
+        Dispatcher.BeginInvoke(UpdateStats, DispatcherPriority.Loaded);
+    }
+
+    // ── Mini overlay mode ────────────────────────────────────────────────────
+
+    private void Mini_Click(object sender, RoutedEventArgs e)
+    {
+        _mini = true;
+        Card.Visibility = Visibility.Collapsed;
+        MiniPanel.Visibility = Visibility.Visible;
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.NoResize;
+        Topmost = true;
+
+        // Round the borderless window's corners (Windows 11)
+        var handle = new WindowInteropHelper(this).Handle;
+        int round = DWMWCP_ROUND;
+        DwmSetWindowAttribute(handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int));
+    }
+
+    private void MiniRestore_Click(object sender, RoutedEventArgs e)
+    {
+        _mini = false;
+        MiniPanel.Visibility = Visibility.Collapsed;
+        Card.Visibility = Visibility.Visible;
+        WindowStyle = WindowStyle.SingleBorderWindow;
+        ResizeMode = ResizeMode.CanMinimize;
+        Topmost = PinToggleBtn.IsChecked == true;
+        Dispatcher.BeginInvoke(UpdateStats, DispatcherPriority.Loaded);
+    }
+
+    private void Mini_Drag(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == MouseButtonState.Pressed)
+        {
+            try { DragMove(); } catch { }
+        }
+    }
+
+    // ── Sounds ───────────────────────────────────────────────────────────────
+
+    private void InitSounds()
+    {
+        try
+        {
+            _tick = LoadTone((1175, 0.07));
+            _tickLow = LoadTone((587, 0.07));
+            _chime = LoadTone((880, 0.12), (1109, 0.12), (1319, 0.22));
+        }
+        catch { /* no sound is better than no app */ }
+    }
+
+    private static SoundPlayer LoadTone(params (double freq, double seconds)[] notes)
+    {
+        const int rate = 44100;
+        const double amp = 0.22;
+
+        int totalSamples = notes.Sum(n => (int)(rate * n.seconds));
+        var ms = new MemoryStream();
+        var bw = new BinaryWriter(ms);
+        int dataLen = totalSamples * 2;
+
+        bw.Write("RIFF"u8); bw.Write(36 + dataLen); bw.Write("WAVE"u8);
+        bw.Write("fmt "u8); bw.Write(16); bw.Write((short)1); bw.Write((short)1);
+        bw.Write(rate); bw.Write(rate * 2); bw.Write((short)2); bw.Write((short)16);
+        bw.Write("data"u8); bw.Write(dataLen);
+
+        foreach (var (freq, seconds) in notes)
+        {
+            int n = (int)(rate * seconds);
+            for (int i = 0; i < n; i++)
+            {
+                double t = (double)i / rate;
+                double envelope = Math.Exp(-t * 30);
+                short sample = (short)(Math.Sin(2 * Math.PI * freq * t) * envelope * amp * short.MaxValue);
+                bw.Write(sample);
+            }
+        }
+
+        ms.Position = 0;
+        var player = new SoundPlayer(ms);
+        player.Load();
+        return player;
+    }
+
+    private void PlaySound(SoundPlayer? player)
+    {
+        if (!_settings.SoundOn || player is null) return;
+        try { player.Play(); } catch { }
+    }
+
+    // ── Blink animation for the rebind buttons ───────────────────────────────
+
+    private static void StartBlink(UIElement el)
+    {
+        var blink = new DoubleAnimation(1, 0.5, TimeSpan.FromMilliseconds(500))
+        {
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever
+        };
+        el.BeginAnimation(OpacityProperty, blink);
+    }
+
+    private static void StopBlink(UIElement el)
+    {
+        el.BeginAnimation(OpacityProperty, null);
+        el.Opacity = 1;
+    }
+
+    // ── Persistence ──────────────────────────────────────────────────────────
+
+    private void SaveSettings()
+    {
+        if (_loading) return;
+        try
+        {
+            Directory.CreateDirectory(SettingsDir);
+            // Write-then-swap so another instance can never read a half-written file
+            string tmp = SettingsPath + ".tmp";
+            File.WriteAllText(tmp,
+                JsonSerializer.Serialize(_settings, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(tmp, SettingsPath, overwrite: true);
+        }
+        catch { /* never block counting on a failed save */ }
+    }
+
+    private void LoadSettings()
+    {
+        _loading = true;
+        // Retry a few times in case a closing instance is mid-save
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                if (!File.Exists(SettingsPath)) break;
+
+                string json = File.ReadAllText(SettingsPath);
+                using var doc = JsonDocument.Parse(json);
+
+                _settings = doc.RootElement.TryGetProperty("Hunts", out _)
+                    ? JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings()
+                    : MigrateV1(doc.RootElement);
+                break;
+            }
+            catch (Exception ex) when (ex is IOException or JsonException && attempt < 4)
+            {
+                Thread.Sleep(150);
+            }
+            catch
+            {
+                _settings = new AppSettings();
+                break;
+            }
+        }
+
+        if (_settings.Hunts.Count == 0) _settings.Hunts.Add(new Hunt());
+        _settings.ActiveHunt = Math.Clamp(_settings.ActiveHunt, 0, _settings.Hunts.Count - 1);
+        if (_settings.UiScale < 0.5 || _settings.UiScale > 2) _settings.UiScale = 1.0;
+
+        SoundToggleBtn.IsChecked = _settings.SoundOn;
+        PinToggleBtn.IsChecked = _settings.AlwaysOnTop;
+        Topmost = _settings.AlwaysOnTop;
+
+        RadioButton? scalePill = _settings.UiScale switch
+        {
+            0.7 => Scale70,
+            0.85 => Scale85,
+            1.0 => Scale100,
+            1.15 => Scale115,
+            _ => null
+        };
+        if (scalePill is not null) scalePill.IsChecked = true;
+        ApplyScale(_settings.UiScale);
+
+        _loading = false;
+
+        RefreshHuntList();
+        ApplyHuntToUi();
+    }
+
+    /// Convert the original single-hunt settings format.
+    private static AppSettings MigrateV1(JsonElement root)
+    {
+        var hunt = new Hunt { Name = "Hunt 1" };
+        var s = new AppSettings();
+
+        if (root.TryGetProperty("Count", out var c) && c.TryGetInt64(out long count))
+            hunt.Count = Math.Max(0, count);
+        if (root.TryGetProperty("Step", out var st) && st.TryGetInt32(out int step))
+            hunt.Step = Math.Max(1, step);
+        if (root.TryGetProperty("Odds", out var o) && o.TryGetDouble(out double odds) && odds >= 2)
+            hunt.Odds = odds;
+        if (root.TryGetProperty("BindType", out var bt) && bt.GetString() is "key" or "pad")
+            hunt.BindType = bt.GetString()!;
+        if (root.TryGetProperty("BindKey", out var bk) && bk.TryGetInt32(out int key))
+            hunt.BindKey = key;
+        if (root.TryGetProperty("BindButton", out var bb) && bb.TryGetInt32(out int btn))
+            hunt.BindButton = btn;
+        if (root.TryGetProperty("AlwaysOnTop", out var aot) && aot.ValueKind == JsonValueKind.True)
+            s.AlwaysOnTop = true;
+
+        s.Hunts.Add(hunt);
+        return s;
+    }
+
+    // ── Win32 ────────────────────────────────────────────────────────────────
+
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWCP_ROUND = 2;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetModuleHandle(string? lpModuleName);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+}
